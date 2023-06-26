@@ -1,0 +1,207 @@
+---
+title: "GOOG_Model_Project"
+author: "Christian DeJong"
+date: "2023-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Libraries
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+#Load Data
+```{r}
+EmployRate <- read_csv("https://raw.githubusercontent.com/cdejong1/DATA316/main/Stock%20Model%20Data/EmploymentRate.csv")
+FinStatement <- read_csv("https://raw.githubusercontent.com/cdejong1/DATA316/main/Stock%20Model%20Data/GOOG%20Financial%20Statment%20Data.csv")
+StockPrice <- read_csv("https://raw.githubusercontent.com/cdejong1/DATA316/main/Stock%20Model%20Data/GOOG%20stock%20price.csv")
+InflationRate <- read_csv("https://raw.githubusercontent.com/cdejong1/DATA316/main/Stock%20Model%20Data/InflationRate.csv")
+MktReturn <- read_csv("https://raw.githubusercontent.com/cdejong1/DATA316/main/Stock%20Model%20Data/MktReturn.csv")
+```
+
+#Next we need to combine all the tables into a single Stock Table, combining on date
+```{r}
+df1 <- merge(EmployRate, FinStatement, by = "Date")
+df2 <- merge(df1, StockPrice, by = "Date")
+df3 <- merge(df2, InflationRate, by = "Date")
+GOOG <- merge(df3, MktReturn, by = "Date")
+```
+#Format Date Column
+```{r}
+GOOG$Date <- as.Date(GOOG$Date, format = "%m/%d/%y")
+```
+
+#Create a new column called chng_in_price, which will aslo be our response variable
+```{r}
+GOOG <- GOOG %>%
+  arrange(Date) %>%
+  mutate(chng_in_price = StockPrice - lag(StockPrice, default = first(StockPrice)))
+```
+
+#Now that our data frame is all set up we can begin to visualize and analyze the data
+```{r}
+#First lets visualize the stockprice chart over our observed time
+ggplot(GOOG, aes(x= Date, y = StockPrice)) +
+  geom_line()
+```
+As we can see from this line graph, the price of the stock has increased by roughly $100 over this period. However, this does not give us a good representation of how the stock performed year-over-year
+```{r}
+ggplot(GOOG, aes(x=Date, y= chng_in_price)) +
+  geom_line()
+```
+From this visual, we can interpret that GOOG has experienced relatively constant growth over our 18 year period, with the greatest exception being in the last year 2022. Which is correlated to external factors (COVID)
+
+#The model we will be using to visualize the relationships in our data is a multiple linear regression model. Using such a model we can investigate the relationship between our response variable (chng_in_price) and our explanatory variables (Inflation rate, Employment Rate, Market Return, Revenues, Operating Cash FLows)
+
+#Next lets start buidling our model with our response variable chng_in_price.
+#First, lets create a simple model with only one predictor variable, MktReturn
+```{r}
+mod.1 <- lm(chng_in_price ~ MktReturn, GOOG)
+summary(mod.1)
+```
+In Finance, the performance of the market, or S&P 500 index, is often a good indicator for market predictions. When the market as a whole is positive, you can assume any individual level security to also have positive returns. However, the level of returns does not generally coincide. 
+
+Mod.1 Interpretation
+  - MktReturn : the coefficient estimate of 76.010 means that for every one unit increase in market return, the average change in price is expected to increase by 76.010 units. This value is statistically significant with a p-value of 0.003817 < 0.05. 
+  - R-squared : multiple the r-squared value of 0.3973 indicates that the model explains 39.73% of the variation in the change in price. The adjusted R-squared value takes into account the number of predictor variables in the model. 
+
+Therefore, using this summary we can conclude mod.1 is a fair representation of change in stock price annually; however, there is room for improvement in explaining the variation.
+
+# Now lets create a model using the financial statement data, Revenues and Operating Cash Flows
+# Revnue and Operating Cash Flows are often used as an indication of how well the company did during a period of time ( quarterly or annually, in this case all data is annual records)
+# Excluding external factors and financing activites, when revenues and operating cash flows are high, companies tend to experience growth with the influx of capital
+
+```{r}
+mod.2 <- lm(chng_in_price ~ OCF + Revenue, GOOG)
+summary(mod.2)
+```
+
+Mod.2 Interpretation
+  - OCF : The coefficient estimate of 0.00674 means that for every one unit increase in OCF, the average change in price is expected to increase by 0.006744 units. This value is statistically significant with a p-value of 0.00203.
+  - Revenue : The coefficient estimate of -0.0022755 means that for every one unit increase in Revenue, the average change in price is expected to decrease by -0.0022755 units. This value is statistically significant with a p-value of 0.00212
+  - R-Squared : The r-squared value of 0.4586 indicates that the model explains 45.86% of the variation in the change in price. 
+  
+Compared to mod.1, mod.2 is a better fit for the data, but by only an additional 5%. However, the negative coefficient for Revenue is surprising and points towards the need for additional explanatory variables in Cost of Goods Sold and Debt Financing. As there is probably an explanation as to why stock price increases when revenues decrease. 
+
+# Now lets create a model for change in stock price using external factors and indicators (Inflation Rate, Employment Rate)
+# These two variables are a good fit in modeling external factors as a whole as there is usually an inverse correlation between each and the overall performance of the market
+```{r}
+mod.3 <- lm(chng_in_price ~ InflationRate + EmployRate, GOOG)
+summary(mod.3)
+```
+
+Mod.3 Interpretation
+  - InflationRate : The coefficient estimate of 0.05455 means that for every one unit increase in the Inflation Rate, the average change in price is expected to increase by 0.05455 units. This value is statistically insignificant with a p-value of 0.986
+  - EmployRate : The coefficient estimate of -0.04211 means that for every one unit increase in the Employment Rate, the average change in price is expected to decrease by 0.04211 units. This value is statistically insignificant with a p-value of 0.988
+  - R-Squared : The R-squared value of 5.468e-5 indicates that the model explains 0.005468% of the variation in the change in price. 
+  
+As a whole, Inflation Rate and Employment Rate do not provide a accurate representation for the change in stock price. However, this is to be expected as Inflation Rate and Employment Rate do not provide any substance in the performance of Alphabet, but rather an insight into the economy and its impacts as a whole. Inflation Rate can act as a indicator of how companies respond to rate hikes by the FED; where we tend to see companies make changes in their financing activities and their focus on either growth or stability. For example, rate hikes this year affected the banking industry, more specifically the collapse of SVB and the buyout of Credit Suisse. This was due to their financing activities and defaulting on short-term treasury bonds. Employment Rate was used as it can be used as an indicator for the regression or expansion of the economy.
+
+# Now lets create a model that takes both the external and internal factors and indicators into account.
+```{r}
+mod.4 <- lm(chng_in_price ~ MktReturn + Revenue + OCF + EmployRate + InflationRate, GOOG)
+summary(mod.4)
+```
+
+Mod.4 Interpretation
+  - MktReturn : the coefficient estimate of 56.7027 means that for every one unit increase in market return, the average change in price is expected to increase by 56.7027 units. This value is statistically significant with a p-value of 0.01406
+  - OCF : The coefficient estimate of 0.0056575 means that for every one unit increase in OCF, the average change in price is expected to increase by 0.0056575 units. This value is statistically significant with a p-value of 0.00522.
+  - Revenue : The coefficient estimate of -0.0019362 means that for every one unit increase in Revenue, the average change in price is expected to decrease by 0.0019362 units. This value is statistically significant with a p-value of 0.00537
+  - InflationRate : The coefficient estimate of 0.4686980 means that for every one unit increase in the Inflation Rate, the average change in price is expected to increase by 0.4686980 units. This value is statistically insignificant with a p-value of 0.83358
+  - EmployRate : The coefficient estimate of -1.4632252 means that for every one unit increase in the Employment Rate, the average change in price is expected to decrease by 1.4632252 units. This value is statistically insignificant with a p-value of 0.45985
+  - R-Squared : The R-squared value of 0.679 indicates that the model explains 67.9% of the variation in the change in price.
+  
+# Now lets predict the change in stock price for the future, as what good is our model for future earnings if were not able to predict future changes in price
+```{r}
+predict_chng_in_price <- function(mkt_return, revenue, ocf, employ_rate, inflation_rate, mod.4) {
+  input_data <- data.frame(MktReturn = mkt_return,
+                           Revenue = revenue,
+                           OCF = ocf,
+                           EmployRate = employ_rate,
+                           InflationRate = inflation_rate)
+  
+  pred <- predict(mod.4, newdata = input_data)
+  
+  pred_value <- pred[1]
+  
+  # return the predicted value and prediction interval as a list
+  return(list(pred_value = pred_value))
+}
+```
+
+```{r}
+#From GOOGL 2023 Q1 Financial Reports
+input_mkt_return <- 0.07
+input_revenue <- 280000
+input_ocf <- 91000
+input_employ_rate <- 0.035
+input_inflation_rate <- 0.05
+
+# use the predict_chng_in_price function to calculate the predicted value of chng_in_price and prediction interval
+pred <- predict_chng_in_price(input_mkt_return, input_revenue, input_ocf, input_employ_rate, input_inflation_rate, mod.4)
+
+# print the predicted value and prediction interval
+cat("Predicted value of chng_in_price:", pred$pred_value)
+```
+
+# Now lets plot our Stock Price and Change in Stock Price to see the correlation between the two
+```{r}
+ggplot(GOOG, aes(x=Date)) +
+  geom_line(aes(y=StockPrice, color="Stock Price"), size=1.2) +
+  geom_line(aes(y=chng_in_price, color="Change in Stock Price (Percentage %)"), linetype="dashed", size=1.2) +
+  scale_y_continuous(name = "Stock Price", 
+                     sec.axis = sec_axis(~./1, name = "Change in Stock Price (Percentage %)")) +
+  scale_color_manual(values = c("Stock Price" = "red", "Change in Stock Price (Percentage %)" = "blue")) +
+  labs(title = "Alphabet Inc. Stock Price and Change in Price",
+       subtitle = "2004-2022",
+       x = "Date",
+       y = "Stock Price") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 20, hjust = 0.5),
+        plot.subtitle = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = "bold", size = 12),
+        legend.title = element_text(face = "bold", size = 12),
+        legend.position = "top",
+        legend.box = "horizontal",
+        legend.text = element_text(size = 10))
+```
+
+#Here I wanted to create a bar that would go on the bottom on the graph which would have colored sections for each year, green being our model predicted the price correctly, and red being incorrectly
+# I ran out of time to really explore this option
+```{r}
+# prediction_compare <- predict(mod.4)
+```
+
+```{r}
+# correctness = [colors]
+# for i in range(length(prediction_compare)):
+#   if prediction_compare[i] >= (actual[i]*0.679) or <= (actual[i]*1.30):
+#     color = "green" # within the interval to say our prediction is correct
+#     correctness.append(color)
+#   else:
+#     color = "red" # outside the interval to say our prediction was incorrect
+#     correctness.append(color)
+```
+
+```{r}
+secret_message <- "Thanks for a great semester! I hope you have a fun summer! :) "
+
+print(secret_message)
+```
+
+
+
+
+
+
+
+
+
+
+
